@@ -91,38 +91,43 @@ impl Keyboard {
         code: u32,
         modifier_state: ModifierState,
     ) -> Option<String> {
-        let mut keyboard = TISCopyCurrentKeyboardInputSource();
-        let mut layout = TISGetInputSourceProperty(keyboard, kTISPropertyUnicodeKeyLayoutData);
-
-        if layout.is_null() {
-            // TISGetInputSourceProperty returns NULL when using CJK input methods,
-            // using TISCopyCurrentKeyboardLayoutInputSource to fix it.
-            keyboard = TISCopyCurrentKeyboardLayoutInputSource();
-            layout = TISGetInputSourceProperty(keyboard, kTISPropertyUnicodeKeyLayoutData);
+        let result = dispatch::Queue::main().exec_sync(|| {
+            // The code that needs to run on the main thread
+            let mut keyboard = TISCopyCurrentKeyboardInputSource();
+            let mut layout = TISGetInputSourceProperty(keyboard, kTISPropertyUnicodeKeyLayoutData);
+    
             if layout.is_null() {
-                return None;
+                // TISGetInputSourceProperty returns NULL when using CJK input methods,
+                // using TISCopyCurrentKeyboardLayoutInputSource to fix it.
+                keyboard = TISCopyCurrentKeyboardLayoutInputSource();
+                layout = TISGetInputSourceProperty(keyboard, kTISPropertyUnicodeKeyLayoutData);
+                if layout.is_null() {
+                    return None;
+                }
             }
-        }
-        let layout_ptr = CFDataGetBytePtr(layout);
-
-        let mut buff = [0_u16; BUF_LEN];
-        let kb_type = LMGetKbdType();
-        let mut length = 0;
-        let _retval = UCKeyTranslate(
-            layout_ptr,
-            code.try_into().ok()?,
-            kUCKeyActionDown,
-            modifier_state,
-            kb_type,
-            kUCKeyTranslateDeadKeysBit,
-            &mut self.dead_state,                 // deadKeyState
-            BUF_LEN,                              // max string length
-            &mut length as *mut UniCharCount,     // actual string length
-            &mut buff as *mut [UniChar; BUF_LEN], // unicode string
-        );
-        CFRelease(keyboard);
-
-        String::from_utf16(&buff[..length]).ok()
+            let layout_ptr = CFDataGetBytePtr(layout);
+    
+            let mut buff = [0_u16; BUF_LEN];
+            let kb_type = LMGetKbdType();
+            let mut length = 0;
+            let _retval = UCKeyTranslate(
+                layout_ptr,
+                code.try_into().ok()?,
+                kUCKeyActionDown,
+                modifier_state,
+                kb_type,
+                kUCKeyTranslateDeadKeysBit,
+                &mut self.dead_state,                 // deadKeyState
+                BUF_LEN,                              // max string length
+                &mut length as *mut UniCharCount,     // actual string length
+                &mut buff as *mut [UniChar; BUF_LEN], // unicode string
+            );
+            CFRelease(keyboard);
+    
+            String::from_utf16(&buff[..length]).ok()
+        });
+    
+        result
     }
 }
 
